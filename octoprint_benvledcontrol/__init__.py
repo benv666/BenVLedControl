@@ -4,6 +4,8 @@ from __future__ import absolute_import
 import octoprint.plugin
 import octoprint.events
 import requests
+from neopixel import *
+from rpi_ws281x import *
 
 '''
 	BenV's octoprint Led control
@@ -23,6 +25,32 @@ class BenVLedPlugin(octoprint.plugin.StartupPlugin,
 				octoprint.plugin.AssetPlugin,
 				octoprint.plugin.TemplatePlugin):
 
+	def initialize(self):
+		self._initialized = False
+
+		# LED strip configuration:
+		LED_COUNT      = self._settings.get(["ledcontrol", "led_count"])
+		LED_PIN        = self._settings.get(["ledcontrol", "led_gpio"])
+		LED_FREQ_HZ    = self._settings.get(["ledcontrol", "led_freq"])
+		LED_DMA        = self._settings.get(["ledcontrol", "led_dma"])
+		LED_BRIGHTNESS = self._settings.get(["ledcontrol", "led_brightness"])
+		LED_CHANNEL    = self._settings.get(["ledcontrol", "led_channel"])
+		LED_INVERT     = False   # True to invert the signal (when using NPN transistor level shift)
+		LED_STRIP      = rpi_ws281x.ws.WS2811_STRIP_GRB   # Strip type and colour ordering
+
+		# (self, num, pin, freq_hz=800000, dma=5, invert=False, brightness=128, channel=0, gamma=None):
+		# self._strip = Adafruit_NeoPixel(LED_COUNT, LED_PIN, LED_FREQ_HZ, LED_DMA, LED_INVERT, LED_BRIGHTNESS, LED_CHANNEL, LED_STRIP)
+		self._strip = Adafruit_NeoPixel(LED_COUNT, LED_PIN, LED_FREQ_HZ, LED_DMA, LED_INVERT, LED_BRIGHTNESS, LED_CHANNEL, None)
+		# Intialize the library (must be called once before other functions).
+		self._strip.begin()
+		self._initialized = True
+
+		# Light every other LED
+		color = Color(255, 128, 128)
+		for i in range(strip.numPixels()):
+			strip.setPixelColor(i, color)
+		strip.show()
+
 	def get_settings_defaults(self):
 		return dict(
 			enabled=True,
@@ -40,7 +68,13 @@ class BenVLedPlugin(octoprint.plugin.StartupPlugin,
 				printerconnected=False,
 				printerdisconnected=False,
 				printererror=True,
-				interval=0
+				interval=0,
+				led_freq=800000,# LED signal frequency in hertz (usually 800khz)
+				led_gpio=18,# GPIO pin connected to the pixels (18 uses PWM).
+				led_dma=10,# DMA channel to use for generating signal (try 10)
+				led_count=32, # Number of addressable LEDs/(chips).
+				led_brightness=255,# Set to 0 for darkest and 255 for brightest
+				led_channel=0# set to '1' for GPIOs 13, 19, 41, 45 or 53
 			)
 		)
 
@@ -58,9 +92,12 @@ class BenVLedPlugin(octoprint.plugin.StartupPlugin,
 		if not self._settings.get(['enabled']):
 			return
 
-		#if self._settings.get(['ledcontrol','startup']):
-		#	self._logger.info("Sending IP to group "+self._settings.get(["informergroup"]))
-		#	return
+		try:
+			self.initialize()
+		except Exception as e:
+			self._initialized = False
+			self._logger.warning("Error initializing! %s" % str(e))
+		 	return
 
 	def on_event(self, event, payload):
 		# Return if not enabled
